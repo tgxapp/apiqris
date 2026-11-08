@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+
+# konfigurasi lokal (jangan pernah di-commit)
+.env
