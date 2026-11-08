@@ -67,7 +67,7 @@ User=${APP_USER}
 Group=${APP_USER}
 WorkingDirectory=${APP_DIR}
 Environment=PYTHONUNBUFFERED=1
-ExecStart=${APP_DIR}/.venv/bin/uvicorn main:app --host ${BIND_HOST} --port ${PORT} --workers 1 --access-logfile -
+ExecStart=${APP_DIR}/.venv/bin/uvicorn main:app --host ${BIND_HOST} --port ${PORT} --workers 1
 Restart=always
 RestartSec=3
 LimitNOFILE=65535
