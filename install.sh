@@ -4,7 +4,7 @@
 #
 # Dengan domain (nginx + HTTPS Let's Encrypt):
 #   chmod +x install.sh && sudo ./install.sh qris.domainkamu.com
-# Tanpa domain (pakai IP VPS langsung, API di http://IP_VPS:8100):
+# Tanpa domain (pakai IP VPS langsung, API di http://IP_VPS:2020):
 #   chmod +x install.sh && sudo ./install.sh
 set -euo pipefail
 
@@ -17,7 +17,7 @@ DOMAIN="${1:-}"
 APP_NAME="apiqris"
 APP_DIR="/var/www/${APP_NAME}"
 APP_USER="${APP_NAME}"
-PORT="8100"
+PORT="2020"
 BIND_HOST="127.0.0.1"
 if [ -z "${DOMAIN}" ]; then
   # Tanpa domain -> bind 0.0.0.0 agar API bisa diakses via http://IP_VPS:PORT.

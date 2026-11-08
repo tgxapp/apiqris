@@ -32,11 +32,11 @@ Dari folder `apiqris`:
 
 ```bash
 pip install -r requirements.txt   # atau venv sendiri
-python main.py                    # http://0.0.0.0:8100
+python main.py                    # http://0.0.0.0:2020
 ```
 
-Deploy ke VPS tanpa domain: `sudo ./install.sh` (API di `http://IP_VPS:8100`,
-port 8100 dibuka otomatis di firewall). Dengan domain:
+Deploy ke VPS tanpa domain: `sudo ./install.sh` (API di `http://IP_VPS:2020`,
+port 2020 dibuka otomatis di firewall). Dengan domain:
 `sudo ./install.sh qris.domainkamu.com` (nginx + HTTPS). Install script
 menyalin folder ke `/var/www/apiqris` lalu membuat service systemd.
 
@@ -48,10 +48,10 @@ menyalin folder ke `/var/www/apiqris` lalu membuat service systemd.
 | `WIJAYAPAY_API_URL` | Base URL gateway WijayaPay — wajib diisi di .env (mis. `https://gateway.wijayapay.com`) |
 | `WIJAYAPAY_CODE_MERCHANT` | Kode merchant dari dashboard WijayaPay |
 | `WIJAYAPAY_API_KEY` | API key dari dashboard WijayaPay |
-| `WIJAYAPAY_CALLBACK_URL` | URL callback yang dikirim saat create invoice — boleh IP VPS tanpa domain: `http://IP_VPS:8100/webhook`. Kosong = tidak dikirim |
+| `WIJAYAPAY_CALLBACK_URL` | URL callback yang dikirim saat create invoice — boleh IP VPS tanpa domain: `http://IP_VPS:2020/webhook`. Kosong = tidak dikirim |
 | `WIJAYAPAY_CALLBACK_IP` | Whitelist IP server callback WijayaPay (docs: `172.235.245.77`), bisa beberapa IP dipisah koma. Kosong = tidak dicek |
 | `REDIS_URL` | Redis untuk menyimpan callback webhook (mis. `redis://127.0.0.1:6379/0`). Kosong = callback tidak disimpan |
-| `APIQRIS_HOST` / `APIQRIS_PORT` | Bind address server API (default `0.0.0.0:8100`) |
+| `APIQRIS_HOST` / `APIQRIS_PORT` | Bind address server API (default `0.0.0.0:2020`) |
 
 ## Endpoint
 
@@ -66,7 +66,7 @@ Body JSON:
 Contoh curl:
 
 ```bash
-curl -X POST http://127.0.0.1:8100/create-qris \
+curl -X POST http://127.0.0.1:2020/create-qris \
   -H "Content-Type: application/json" \
   -d '{"api_key":"APIQRIS_API_KEY","device":"bot1","user_id":123456,"amount":50000}'
 ```
@@ -151,10 +151,10 @@ Menerima callback status pembayaran dari WijayaPay (dikirim gateway ke
 WijayaPay sebagai callback URL. Tanpa domain, isi dengan IP VPS:
 
 ```
-WIJAYAPAY_CALLBACK_URL=http://123.45.67.89:8100/webhook
+WIJAYAPAY_CALLBACK_URL=http://123.45.67.89:2020/webhook
 ```
 
-Pastikan port 8100 terbuka di firewall VPS (install.sh tanpa domain sudah
+Pastikan port 2020 terbuka di firewall VPS (install.sh tanpa domain sudah
 membukanya).
 
 Contoh payload dari WijayaPay (docs):
@@ -188,7 +188,7 @@ Verifikasi berlapis:
 Jawaban sukses: `{"status": true}` (format yang diharapkan gateway).
 
 ```bash
-curl -X POST http://127.0.0.1:8100/webhook \
+curl -X POST http://127.0.0.1:2020/webhook \
   -H "Content-Type: application/json" \
   -H "X-Signature: <md5(code_merchant+api_key+ref_id)>" \
   -d '{"status":"paid","data":{"ref_id":"DEPO-K3M9N2PQ-7X4Y2Z","total_dibayar":50317}}'

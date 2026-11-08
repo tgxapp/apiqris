@@ -38,7 +38,7 @@ APIQRIS_API_KEY = (os.getenv("APIQRIS_API_KEY") or "").strip()
 
 # --- server API ---
 APIQRIS_HOST = (os.getenv("APIQRIS_HOST") or "0.0.0.0").strip()
-APIQRIS_PORT = int(os.getenv("APIQRIS_PORT") or "8100")
+APIQRIS_PORT = int(os.getenv("APIQRIS_PORT") or "2020")
 
 # --- batas nominal QRIS per transaksi (Rupiah) ---
 MIN_AMOUNT = 10_000
