@@ -17,6 +17,28 @@ WIJAYAPAY_API_URL = (os.getenv("WIJAYAPAY_API_URL") or "").strip().rstrip("/")
 WIJAYAPAY_CODE_MERCHANT = (os.getenv("WIJAYAPAY_CODE_MERCHANT") or "").strip()
 WIJAYAPAY_API_KEY = (os.getenv("WIJAYAPAY_API_KEY") or "").strip()
 
+# --- PayKita (https://pay.digikita.id) ---
+# Order QRIS via REST API: POST /api/orders, GET /api/orders/:id,
+# POST /api/orders/:id/cancel. Auth: header x-api-key (API key project,
+# pk_live_... dari dashboard PayKita).
+PAYKITA_API_URL = (
+    os.getenv("PAYKITA_API_URL") or "https://pay.digikita.id/api"
+).strip().rstrip("/")
+PAYKITA_API_KEY = (os.getenv("PAYKITA_API_KEY") or "").strip()
+# Umur order PayKita (ttl_seconds, 60-86400); default 15 menit.
+PAYKITA_TTL_SECONDS = min(86400, max(60, int(os.getenv("PAYKITA_TTL_SECONDS") or 900)))
+
+# --- webhook PayKita ---
+# URL HTTPS yang dikirim ke PayKita sebagai ``webhook_url`` saat create
+# order. Wajib HTTPS tanpa redirect (PayKita menolak URL http). Kosong =
+# tidak dikirim -> status didapat via polling /check-me saja. Contoh:
+#   PAYKITA_WEBHOOK_URL=https://qris.domainkamu.com/webhook-paykita
+PAYKITA_WEBHOOK_URL = (os.getenv("PAYKITA_WEBHOOK_URL") or "").strip()
+# Webhook Secret dari dashboard PayKita (Pengaturan -> Webhook) untuk
+# verifikasi signature HMAC-SHA256 header x-paykita-signature. Kosong =
+# webhook ditolak (mencegah request palsu).
+PAYKITA_WEBHOOK_SECRET = (os.getenv("PAYKITA_WEBHOOK_SECRET") or "").strip()
+
 # --- callback/webhook ---
 # URL yang dikirim ke WijayaPay saat create; gateway akan POST status
 # pembayaran ke URL ini. Kosong = callback_url tidak dikirim.

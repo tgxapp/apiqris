@@ -238,6 +238,155 @@ Callback yang datang tanpa record create (mis. Redis sempat flush)
 dibuatkan record baru dari data callback. Bila `REDIS_URL` kosong di
 `.env`, apa pun tidak disimpan (hanya log).
 
+## PayKita (`/create-me` & `/check-me`)
+
+Endpoint QRIS alternatif via **PayKita** (`https://pay.digikita.id`, API
+`/api`, auth header `x-api-key: pk_live_...`). Interface body/respons
+sederajat `/create-qris` — klien cukup ganti path. Kredensial di `.env`:
+`PAYKITA_API_KEY` (API key project, wajib), `PAYKITA_API_URL` (default
+`https://pay.digikita.id/api`), `PAYKITA_TTL_SECONDS` (umur order,
+60–86400, default 900 = 15 menit).
+
+### `POST /create-me`
+
+Body JSON (sama dengan `/create-qris`):
+
+```json
+{"api_key": "APIQRIS_API_KEY", "device": "bot1", "user_id": 123456, "amount": 50000}
+```
+
+Respons sukses:
+
+```json
+{
+  "status": "create_ok",
+  "device": "bot1",
+  "user_id": 123456,
+  "nominal": 50000,
+  "order_id": "DEPO-K3M9N2PQ-7X4Y2Z",
+  "trx_reference": "pay_msiabc123def456",
+  "unique_code": 787,
+  "total": 50787,
+  "qris_string": "00020101021226...",
+  "qr_image": "",
+  "checkout_url": "https://pay.digikita.id/pay/pay_msiabc123def456",
+  "expired_at": "2026-11-14 21:35",
+  "message": ""
+}
+```
+
+Keterangan:
+
+- `order_id` = `DEPO-XXXXXXXX-XXXXXX` buatan kita, dikirim ke PayKita
+  sebagai `reference` (pembanding di webhook/payload mereka).
+- `trx_reference` = ID order PayKita (`pay_...`) — dipakai `/check-me`
+  untuk polling status.
+- **PayKita Mode Hybrid**: fee + kode unik ditambahkan PayKita sendiri,
+  jadi `total` = `pay_amount` respons PayKita (`nominal + unique_code`).
+  Nilai `unique_code` di respons hanya `total - nominal`.
+- `qris_string` = payload EMV QRIS (dirender bot jadi gambar QR);
+  `qr_image` selalu kosong (PayKita tidak menyediakan URL gambar).
+- `checkout_url` = halaman pembayaran PayKita (opsional ditampilkan).
+- `expired_at` dalam WIB (`YYYY-MM-DD HH:MM`) dari `expires_at` PayKita.
+- Record awal disimpan ke Redis dengan key sama
+  (`apiqris:{ref_id}:{trx_reference}`, `status: "pending"`,
+  `provider: "paykita"`) sehingga `/check-qris` juga menemukannya.
+- Respons gagal: `status: "create_failed"` + `message` (api_key salah,
+  nominal di luar batas, atau error PayKita seperti `qris_not_configured`,
+  `subscription_required`).
+
+### `POST /check-me`
+
+Cek status order **langsung ke PayKita** (`GET /api/orders/:id`) — bukan
+hanya Redis. Record Redis ikut di-update tiap polling.
+
+Body JSON:
+
+```json
+{"api_key": "APIQRIS_API_KEY", "ref_id": "DEPO-K3M9N2PQ-7X4Y2Z", "trx_reference": "pay_msiabc123def456"}
+```
+
+`trx_reference` opsional — bila kosong, ID order PayKita diambil dari
+record Redis (`apiqris:{ref_id}:*`).
+
+Respons:
+
+```json
+{
+  "status": "check_ok",
+  "ref_id": "DEPO-K3M9N2PQ-7X4Y2Z",
+  "trx_reference": "pay_msiabc123def456",
+  "payment_status": "paid",
+  "data": { "...": "isi penuh record (create + hasil polling)" }
+}
+```
+
+- `payment_status` = `pending` / `paid` / `expired` / `cancelled`
+  (kontrak PayKita; bot memetakan `paid` -> `success`).
+- Endpoint cek status PayKita tetap berjalan walau langganan API
+  merchant berakhir.
+
+### `POST /webhook-paykita`
+
+Terima notifikasi pembayaran langsung dari PayKita (alternatif polling
+`/check-me`). **Wajib HTTPS** — PayKita menolak URL `http://...` maupun
+URL yang me-redirect. Server apiqris harus dideploy dengan domain +
+HTTPS (`sudo ./install.sh qris.domainkamu.com` mengaktifkan nginx +
+Let's Encrypt otomatis).
+
+Kontrak webhook (docs PayKita):
+
+- Header: `x-paykita-timestamp`, `x-paykita-signature` (`v1=<hex
+  HMAC-SHA256>`)
+- Signature: `HMAC-SHA256(PAYKITA_WEBHOOK_SECRET,
+  timestamp + "." + raw_request_body)` — pakai raw body persis
+  (jangan stringify ulang JSON).
+- Payload `order.paid`:
+
+```json
+{
+  "id": "evt_msiabc_abcd1234",
+  "event": "order.paid",
+  "data": {
+    "order_id": "pay_msiabc123def456",
+    "reference": "DEPO-K3M9N2PQ-7X4Y2Z",
+    "mode": "live",
+    "provider": "shopee",
+    "amount": 10087,
+    "status": "paid",
+    "paid_at": "2026-08-07T10:03:21.000Z"
+  }
+}
+```
+
+- Balas `2xx` dalam 10 detik; proses berat lewat BackgroundTasks. Retry
+  PayKita 9x (3 dtk s/d 3 jam) bila gagal — endpoint wajib idempotent
+  (update Redis bersifat overwrite, aman untuk event ulang).
+- Event `webhook.test` (tombol Kirim Test di dashboard) cukup dibalas
+  `200 {"ok": true}`.
+
+Cara mengaktifkan:
+
+1. Deploy apiqris dengan domain HTTPS (install.sh dengan argumen domain).
+2. Isi `.env`:
+   ```
+   PAYKITA_WEBHOOK_URL=https://qris.domainkamu.com/webhook-paykita
+   PAYKITA_WEBHOOK_SECRET=<rahasia dari Pengaturan → Webhook>
+   ```
+   Saat `PAYKITA_WEBHOOK_URL` terisi, `/create-me` mengirimnya sebagai
+   `webhook_url` per order. Alternatif: set global di dashboard PayKita
+   (Pengaturan → Webhook → Webhook Default Project) dan biarkan
+   `PAYKITA_WEBHOOK_URL` kosong.
+3. Di dashboard PayKita (Pengaturan → Webhook) ambil **Webhook Secret**
+   → isi `PAYKITA_WEBHOOK_SECRET`. Tanpa secret, semua webhook
+   ditolak (401) untuk mencegah request palsu.
+4. Klik **Kirim Test** sampai endpoint membalas `2xx`.
+
+Setelah webhook aktif, record Redis (`apiqris:{ref_id}:{trx_reference}`)
+di-update `status: "paid"` oleh webhook; `/check-qris` maupun `/check-me`
+bisa membacanya. Bila webhook belum dipasang (server HTTP saja),
+status tetap didapat via polling `/check-me`.
+
 ## Catatan
 
 - Alur pembayaran: klien memanggil `/create-qris` → menyimpan `order_id`

@@ -18,11 +18,10 @@ APP_NAME="apiqris"
 APP_DIR="/var/www/${APP_NAME}"
 APP_USER="${APP_NAME}"
 PORT="2020"
-BIND_HOST="127.0.0.1"
-if [ -z "${DOMAIN}" ]; then
-  # Tanpa domain -> bind 0.0.0.0 agar API bisa diakses via http://IP_VPS:PORT.
-  BIND_HOST="0.0.0.0"
-fi
+# Selalu bind 0.0.0.0: walau pakai domain, port 2020 tetap bisa diakses
+# via IP langsung (untuk callback WijayaPay yang menerima HTTP biasa).
+# Nginx (HTTPS) tetap bisa proxy ke 127.0.0.1:2020 dari dalam server.
+BIND_HOST="0.0.0.0"
 SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
 NGINX_CONF="/etc/nginx/sites-available/${APP_NAME}"
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,6 +52,8 @@ echo "==> [4/5] cek konfigurasi (${APP_DIR}/.env)"
 grep -q "^WIJAYAPAY_CODE_MERCHANT=." "${APP_DIR}/.env" || { echo "!! WIJAYAPAY_CODE_MERCHANT kosong di .env."; exit 1; }
 grep -q "^WIJAYAPAY_API_KEY=." "${APP_DIR}/.env" || { echo "!! WIJAYAPAY_API_KEY kosong di .env."; exit 1; }
 grep -q "^APIQRIS_API_KEY=." "${APP_DIR}/.env" || { echo "!! APIQRIS_API_KEY kosong di .env (klien tidak bisa auth)."; exit 1; }
+grep -q "^PAYKITA_API_KEY=." "${APP_DIR}/.env" \
+  || echo ">> catatan: PAYKITA_API_KEY kosong - endpoint /create-me & /check-me tidak berfungsi (WijayaPay tetap jalan)."
 
 echo "==> [5/5] systemd service ${APP_NAME}"
 cat > "${SERVICE_FILE}" <<EOF
@@ -117,11 +118,12 @@ else
 fi
 
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+  # Port 2020 selalu dibuka: akses langsung via IP (callback WijayaPay
+  # dan klien bot tanpa domain). 80/443 hanya perlu saat pakai domain.
+  ufw allow "${PORT}/tcp"
   if [ -n "${DOMAIN}" ]; then
     ufw allow 80/tcp
     ufw allow 443/tcp
-  else
-    ufw allow "${PORT}/tcp"
   fi
 fi
 
@@ -142,16 +144,30 @@ else
   echo "   systemctl status ${APP_NAME}"
   echo "   journalctl -u ${APP_NAME} -n 50"
 fi
+IP="$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || true)"
 if [ -n "${DOMAIN}" ]; then
   BASE_URL="https://${DOMAIN}"
 else
-  IP="$(curl -fsS4 --max-time 5 https://api.ipify.org 2>/dev/null || true)"
   BASE_URL="http://${IP:-IP_VPS}:${PORT}"
 fi
+# Saat pakai domain, port 2020 tetap terbuka via IP untuk callback
+# WijayaPay (HTTP biasa) dan klien bot tanpa domain.
+IP_URL="http://${IP:-IP_VPS}:${PORT}"
 echo "Endpoint:"
-echo "  POST ${BASE_URL}/create-qris   body: {api_key, device, user_id, amount}"
-echo "  POST ${BASE_URL}/check-qris    body: {api_key, ref_id, trx_reference}"
-echo "  POST ${BASE_URL}/webhook       (didaftarkan sebagai callback URL di dashboard WijayaPay)"
+echo "  WijayaPay (callback IP):"
+echo "    POST ${IP_URL}/create-qris   body: {api_key, device, user_id, amount}"
+echo "    POST ${IP_URL}/check-qris    body: {api_key, ref_id, trx_reference}"
+echo "    POST ${IP_URL}/webhook       (callback URL di dashboard WijayaPay)"
+echo "  PayKita (webhook HTTPS):"
+if [ -n "${DOMAIN}" ]; then
+  echo "    POST ${BASE_URL}/create-me       body: {api_key, device, user_id, amount}"
+  echo "    POST ${BASE_URL}/check-me        body: {api_key, ref_id, trx_reference}"
+  echo "    POST ${BASE_URL}/webhook-paykita (URL webhook di dashboard PayKita)"
+else
+  echo "    (perlu domain HTTPS; tanpa domain gunakan polling /check-me via IP)"
+  echo "    POST ${IP_URL}/create-me    body: {api_key, device, user_id, amount}"
+  echo "    POST ${IP_URL}/check-me     body: {api_key, ref_id, trx_reference}"
+fi
 echo
 echo "Perintah berguna:"
 echo "  systemctl status ${APP_NAME}"
