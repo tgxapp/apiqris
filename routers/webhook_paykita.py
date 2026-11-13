@@ -71,6 +71,7 @@ async def _handle(
         return
     fields = {
         "status": str(data.get("status") or "paid").strip().lower(),
+        "provider": "paykita",
         "total_dibayar": data.get("amount"),
         "paykita_order_id": order_id,
         "paid_at": str(data.get("paid_at") or ""),

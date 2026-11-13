@@ -116,7 +116,10 @@ Keterangan:
 
 ### `POST /check-qris`
 
-Cek status transaksi **hanya dari Redis** — tidak memanggil WijayaPay.
+Cek status transaksi **hanya dari Redis** — tidak memanggil WijayaPay. Record
+milik PayKita (dibuat `/create-me`, field `provider: "paykita"`) yang masih
+`pending` otomatis di-poll langsung ke PayKita lalu di-update ke Redis,
+sehingga deposit PayKita tetap terbaca walau bot memakai mode `qris`.
 
 Body JSON:
 
@@ -325,6 +328,11 @@ Respons:
   (kontrak PayKita; bot memetakan `paid` -> `success`).
 - Endpoint cek status PayKita tetap berjalan walau langganan API
   merchant berakhir.
+- **Sadar provider**: record milik WijayaPay (dibuat `/create-qris`,
+  tanpa field `provider`) dibaca dari Redis saja — tidak ditabrak ke
+  PayKita, sehingga deposit lama tetap terbaca saat bot mengganti
+  `APIQRIS_MODE`. Record PayKita yang sudah final (paid/expired) tidak
+  di-poll ulang.
 
 ### `POST /webhook-paykita`
 

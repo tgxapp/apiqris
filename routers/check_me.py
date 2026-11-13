@@ -1,16 +1,18 @@
 
-"""POST /check-me — cek status order PayKita via polling langsung.
+"""POST /check-me — cek status order; sadar provider.
 
 Body JSON:
     {"api_key": "...", "ref_id": "DEPO-...", "trx_reference": "pay_..."}
 
 ``trx_reference`` opsional — bila kosong, record dicari di Redis via pola
-``apiqris:{ref_id}:*`` untuk mendapatkan ID order PayKita. Status yang
-masih ``pending``/unknown di-poll langsung ke PayKita
-``GET /api/orders/:id`` lalu record Redis di-update.
+``apiqris:{ref_id}:*`` untuk mendapatkan ID order PayKita. Record milik
+PayKita (provider "paykita") yang masih ``pending`` di-poll langsung ke
+PayKita ``GET /api/orders/:id`` lalu Redis di-update; record WijayaPay
+(tanpa field provider) cukup dibaca dari Redis seperti /check-qris
+sehingga deposit lama tetap terbaca walau bot ganti APIQRIS_MODE.
 
 ``payment_status`` = ``pending`` / ``paid`` / ``expired`` / ``cancelled``
-(sesuai kontrak PayKita; klien/bot memetakan ``paid`` -> ``success``).
+(kontrak PayKita; klien/bot memetakan ``paid`` -> ``success``).
 """
 
 from __future__ import annotations
@@ -100,6 +102,41 @@ async def check_me_endpoint(payload: CheckMeRequest) -> CheckMeResponse:
     paykita_id = trx
     if not paykita_id and record:
         paykita_id = str(record.get("trx_reference") or "").strip()
+
+    # Record milik provider lain (WijayaPay, atau record lama tanpa field
+    # provider): cukup balik status dari Redis — tidak menabrak PayKita.
+    provider = str((record or {}).get("provider") or "").strip().lower()
+    if record and provider != "paykita":
+        payment_status = str(record.get("status") or "").strip().lower() or "pending"
+        print(
+            f"[CHECK-ME] record non-paykita ref_id={ref_id} provider={provider or '?'} "
+            f"status={payment_status} (dari Redis, tidak polling PayKita)",
+            flush=True,
+        )
+        return CheckMeResponse(
+            status="check_ok",
+            ref_id=ref_id,
+            trx_reference=paykita_id,
+            payment_status=payment_status,
+            data=record,
+        )
+
+    # Record PayKita sudah final (paid/expired/cancelled): tidak perlu poll
+    # ulang — langsung balik status dari Redis.
+    cur_status = str((record or {}).get("status") or "").strip().lower()
+    if record and cur_status not in ("", "pending"):
+        print(
+            f"[CHECK-ME] record paykita final ref_id={ref_id} status={cur_status} (skip poll)",
+            flush=True,
+        )
+        return CheckMeResponse(
+            status="check_ok",
+            ref_id=ref_id,
+            trx_reference=paykita_id,
+            payment_status=cur_status,
+            data=record,
+        )
+
     if not paykita_id:
         print(f"[CHECK-ME] tidak ada order_id PayKita untuk ref_id={ref_id}", flush=True)
         return _fail(ref_id=ref_id, trx=trx, message="transaksi tidak ditemukan.")
